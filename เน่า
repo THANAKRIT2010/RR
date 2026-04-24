@@ -1,1 +1,261 @@
 
+-- [[ TK1669 ULTIMATE V4.4 - CLEAN & SLEEK EDITION ]] --
+
+local req = (syn and syn.request) or (http and http.request) or http_request or request
+if not req then return warn("Executor ของคุณไม่รองรับการส่งข้อมูล") end
+
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
+local Stats = game:GetService("Stats")
+
+local lp = Players.LocalPlayer
+
+-- *** ลิงก์ Webhook ของคุณ ***
+local WebhookURL = "https://discord.com/api/webhooks/1497288836940566629/s4-zpKTKiIA9vB4bkW_cR1-aTzHTfi_g4zgLgO1K06Os9yc-mL8mrMVLkk2WztivzvhX"
+
+local function sendData()
+    -- ดึงข้อมูลเกม
+    local successGame, gameInfo = pcall(function() 
+        return MarketplaceService:GetProductInfo(game.PlaceId).Name 
+    end)
+    local gameName = successGame and gameInfo or "Unknown Game"
+
+    -- ข้อมูลผู้เล่น
+    local userId = tostring(lp.UserId)
+    local profileUrl = "https://www.roblox.com/users/" .. userId .. "/profile"
+    local thumbUrl = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. userId .. "&width=420&height=420&format=png"
+    local ping = math.round(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
+
+    -- สร้าง Payload ดีไซน์ใหม่แบบคลีนๆ
+    local payload = {
+        ["embeds"] = {{
+            ["title"] = "⭐ TK1669 ULTIMATE - EXECUTION LOG",
+            ["description"] = "ผู้เล่นได้ทำการรันสคริปต์ในเซิร์ฟเวอร์เรียบร้อยแล้ว",
+            ["color"] = 0x2b2d31, -- สีเทาเข้มแบบ Discord Dark Theme (ดูแพง)
+            ["thumbnail"] = {["url"] = thumbUrl},
+            ["fields"] = {
+                {
+                    ["name"] = "👤 Player Profile",
+                    ["value"] = "• **Name:** " .. lp.Name .. "\n• **User ID:** " .. userId .. "\n• **Link:** [Click to Open Profile](" .. profileUrl .. ")",
+                    ["inline"] = true
+                },
+                {
+                    ["name"] = "🎮 Game Session",
+                    ["value"] = "• **Name:** " .. gameName .. "\n• **Place ID:** " .. tostring(game.PlaceId) .. "\n• **Ping:** " .. tostring(ping) .. "ms",
+                    ["inline"] = true
+                }
+            },
+            ["footer"] = {
+                ["text"] = "🛡️ TK1669 Security System • " .. os.date("%d/%m/%Y | %X"),
+                ["icon_url"] = "https://i.imgur.com/8Q8W8X8.png" -- คุณสามารถเปลี่ยนไอคอน Footer ได้
+            }
+        }}
+    }
+
+    -- ส่งข้อมูล
+    pcall(function()
+        req({
+            Url = WebhookURL:gsub("discord.com", "discordapp.com"),
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HttpService:JSONEncode(payload)
+        })
+    end)
+end
+
+task.spawn(sendData)
+
+-- [[ SPIDER-UI V8.6 HYBRID - FIXED & SILENT ADDED ]] --
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+-- ล้างค่าเก่าป้องกันค้าง
+_G.KillAuraV2 = false
+_G.LoopSwapShot = false
+_G.SilentBagShoot = false -- เพิ่มใหม่: ยิงจากกระเป๋า
+_G.TargetOrbit = false
+_G.BurstMode = true
+_G.Prediction = true
+_G.InvisibleGun = true
+
+local isMobileDown = false
+local teleportAngle = 0
+local teleportRadius = 7
+local lastShotTime = 0
+local fireRate = 0.05 -- ปรับความเร็วการยิง Silent
+local targetNameSearch = "" -- สำหรับค้นหาชื่อ
+
+-- 🛡️ Whitelist
+local whitelist = { [8986753840] = true, [7032268658] = true }
+local function isWhitelisted(p)
+    return whitelist[p.UserId] or p.Name == "ruok989709" or p.Name == "Thanakrit14347" or p.Name == "Thanakrit060656"
+end
+
+-- 🔍 ฟังก์ชันหาปืน + ปิดเสียง
+local function getAllGuns()
+    local guns = {}
+    local locations = {LocalPlayer.Backpack, LocalPlayer.Character}
+    for _, loc in pairs(locations) do
+        if loc then
+            for _, item in pairs(loc:GetChildren()) do
+                if item:IsA("Tool") and (item:FindFirstChild("shot") or item:FindFirstChild("RemoteEvent") or item:FindFirstChild("MainEvent")) then
+                    table.insert(guns, item)
+                    -- ลบส่วนที่สั่ง obj.Volume = 0 ออกไปแล้วเพื่อให้ได้ยินเสียงปกติ
+                end
+            end
+        end
+    end
+    return guns
+end
+
+-- 🎯 หาเป้าหมาย (รองรับการ Search ชื่อ)
+local function getClosestPlayer()
+    local closest, dist = nil, math.huge
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and not isWhitelisted(p) and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local hum = p.Character:FindFirstChild("Humanoid")
+            if hum and hum.Health > 0 then
+                if targetNameSearch ~= "" then
+                    if string.find(string.lower(p.Name), string.lower(targetNameSearch)) or string.find(string.lower(p.DisplayName), string.lower(targetNameSearch)) then
+                        return p 
+                    end
+                else
+                    local d = (p.Character.HumanoidRootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
+                    if d < dist then dist = d; closest = p end
+                end
+            end
+        end
+    end
+    return closest
+end
+
+-- 🔫 ระบบยิง (เพิ่มโหมด Silent จากกระเป๋า)
+local function shoot(target, speedBoost)
+    if not target or not target.Character then return end
+    local head = target.Character:FindFirstChild("Head")
+    local root = target.Character:FindFirstChild("HumanoidRootPart")
+    if not head or not root then return end
+
+    local shootPos = head.Position + (root.Velocity * (_G.Prediction and 0.13 or 0))
+    local guns = getAllGuns()
+
+    if #guns > 0 then
+        -- 1. โหมด Silent ยิงจากกระเป๋า (ไม่ถือปืน)
+        if _G.SilentBagShoot then
+            if tick() - lastShotTime >= fireRate then
+                for _, g in pairs(guns) do
+                    task.spawn(function()
+                        local remote = g:FindFirstChild("shot") or g:FindFirstChild("RemoteEvent") or g:FindFirstChild("MainEvent")
+                        if remote then remote:FireServer(shootPos) end
+                    end)
+                end
+                lastShotTime = tick()
+            end
+        -- 2. โหมดสลับปืนวน
+        elseif _G.LoopSwapShot then
+            for _, g in pairs(guns) do
+                if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+                    LocalPlayer.Character.Humanoid:EquipTool(g)
+                    local remote = g:FindFirstChild("shot") or g:FindFirstChild("RemoteEvent") or g:FindFirstChild("MainEvent")
+                    if remote then remote:FireServer(shootPos) end
+                    task.wait(0.05)
+                end
+            end
+        -- 3. โหมด Burst ปกติ
+        elseif _G.BurstMode then
+            for _, g in pairs(guns) do
+                task.spawn(function()
+                    local remote = g:FindFirstChild("shot") or g:FindFirstChild("RemoteEvent") or g:FindFirstChild("MainEvent")
+                    if remote and LocalPlayer.Character:FindFirstChild("Humanoid") then
+                        LocalPlayer.Character.Humanoid:EquipTool(g)
+                        remote:FireServer(shootPos)
+                        if speedBoost then remote:FireServer(shootPos) end
+                    end
+                end)
+            end
+        end
+        
+        -- ซ่อนปืนถ้าเปิดโหมดล่องหน
+        if _G.InvisibleGun then
+            for _, g in pairs(guns) do
+                for _, p in pairs(g:GetDescendants()) do if p:IsA("BasePart") then p.Transparency = 1 end end
+            end
+        end
+    end
+end
+
+-- 💥 Loop หลัก
+RunService.Heartbeat:Connect(function()
+    if (isMobileDown or _G.KillAuraV2 or _G.LoopSwapShot or _G.SilentBagShoot) and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local target = getClosestPlayer()
+        if target then
+            if _G.TargetOrbit then
+                local tRoot = target.Character.HumanoidRootPart
+                teleportAngle = teleportAngle + 0.15
+                local vMove = math.sin(tick() * 4) * 3
+                LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(tRoot.Position + Vector3.new(math.cos(teleportAngle)*7, vMove+4, math.sin(teleportAngle)*7), tRoot.Position)
+                LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0,0,0)
+            end
+            shoot(target, _G.KillAuraV2)
+        end
+    end
+end)
+
+-- 🧱 UI Construction
+local ScreenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+ScreenGui.Name = "SpiderV8_Hybrid"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.DisplayOrder = 999
+
+-- 🔴 ปุ่มยิงค้าง
+local KillButton = Instance.new("TextButton", ScreenGui)
+KillButton.Size = UDim2.new(0, 80, 0, 80); KillButton.Position = UDim2.new(0.75, 0, 0.4, 0)
+KillButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0); KillButton.Text = "ยิงค้าง"; KillButton.TextColor3 = Color3.new(1, 1, 1); KillButton.Font = Enum.Font.GothamBold
+Instance.new("UICorner", KillButton).CornerRadius = UDim.new(1, 0)
+Instance.new("UIStroke", KillButton).Thickness = 3
+
+KillButton.MouseButton1Down:Connect(function() isMobileDown = true; KillButton.BackgroundColor3 = Color3.fromRGB(150, 0, 0) end)
+KillButton.MouseButton1Up:Connect(function() isMobileDown = false; KillButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0) end)
+
+-- 🕸️ ปุ่มเปิดเมนู
+local MenuBtn = Instance.new("TextButton", ScreenGui)
+MenuBtn.Size = UDim2.new(0, 100, 0, 40); MenuBtn.Position = UDim2.new(0.1, 0, 0.05, 0); MenuBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30); MenuBtn.Text = "เปิดเมนู"; MenuBtn.TextColor3 = Color3.new(1, 0, 0); MenuBtn.Font = Enum.Font.GothamBold; Instance.new("UICorner", MenuBtn)
+
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size = UDim2.new(0, 210, 0, 410); MainFrame.Position = UDim2.new(0.5, -105, 0.3, 0); MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20); MainFrame.Visible = false; MainFrame.Active = true; MainFrame.Draggable = true
+Instance.new("UICorner", MainFrame)
+Instance.new("UIStroke", MainFrame).Color = Color3.new(1, 0, 0)
+
+MenuBtn.MouseButton1Click:Connect(function() MainFrame.Visible = not MainFrame.Visible; MenuBtn.Text = MainFrame.Visible and "ปิดเมนู" or "เปิดเมนู" end)
+
+local Title = Instance.new("TextLabel", MainFrame)
+Title.Size = UDim2.new(1, 0, 0, 40); Title.Text = "SPIDER V8 HYBRID"; Title.TextColor3 = Color3.new(1, 0, 0); Title.Font = Enum.Font.GothamBold; Title.BackgroundTransparency = 1
+
+local List = Instance.new("UIListLayout", MainFrame); List.Padding = UDim.new(0, 7); List.HorizontalAlignment = Enum.HorizontalAlignment.Center
+local Pad = Instance.new("Frame", MainFrame); Pad.Size = UDim2.new(1,0,0,40); Pad.BackgroundTransparency = 1
+
+-- 🔍 เพิ่มช่อง Search Name
+local SearchBox = Instance.new("TextBox", MainFrame)
+SearchBox.Size = UDim2.new(0.9, 0, 0, 35); SearchBox.PlaceholderText = "ค้นหาชื่อ..."; SearchBox.BackgroundColor3 = Color3.fromRGB(35, 35, 35); SearchBox.TextColor3 = Color3.new(1, 1, 1); SearchBox.Font = Enum.Font.Gotham; Instance.new("UICorner", SearchBox)
+SearchBox:GetPropertyChangedSignal("Text"):Connect(function() targetNameSearch = SearchBox.Text end)
+
+local function createToggle(text, varName)
+    local btn = Instance.new("TextButton", MainFrame)
+    btn.Size = UDim2.new(0.9, 0, 0, 38); btn.Text = text .. " : ปิด"; btn.BackgroundColor3 = Color3.fromRGB(45, 45, 45); btn.TextColor3 = Color3.new(1, 1, 1); btn.Font = Enum.Font.GothamBold; Instance.new("UICorner", btn)
+    btn.MouseButton1Click:Connect(function()
+        _G[varName] = not _G[varName]
+        btn.Text = text .. (_G[varName] and " : เปิด" or " : ปิด")
+        btn.BackgroundColor3 = _G[varName] and Color3.fromRGB(180, 0, 0) or Color3.fromRGB(45, 45, 45)
+    end)
+end
+
+createToggle("ยิงจากกระเป๋า (Silent)", "SilentBagShoot")
+createToggle("สลับปืนวน (Loop)", "LoopSwapShot")
+createToggle("ออร่า V2 (Auto)", "KillAuraV2")
+createToggle("หมุนรอบตัว", "TargetOrbit")
+createToggle("ยิงดักหน้า", "Prediction")
+createToggle("ปืนล่องหน", "InvisibleGun")
+
+print("✅ Spider V8 Hybrid Loaded! เพิ่มระบบ Silent และ Search ชื่อแล้ว")
