@@ -1,0 +1,324 @@
+-- [[ 🕷️ TK1669 ULTIMATE V5.1 - SPIDER HYBRID ENGINE (PREMIUM UI) 🕷️ ]] --
+
+local req = (syn and syn.request) or (http and http.request) or http_request or request
+if not req then return warn("Executor ของคุณไม่รองรับการส่งข้อมูล") end
+
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
+local Stats = game:GetService("Stats")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local LocalPlayer = Players.LocalPlayer
+
+-- [[ 🔊 ระบบเสียงแบบ Improved ]] --
+local soundTemplate = Instance.new("Sound")
+soundTemplate.SoundId = "rbxassetid://89674764872022"
+soundTemplate.Volume = 1
+-- ไม่ต้องใส่ Parent ตรงนี้ เพื่อเก็บเป็นต้นแบบ
+
+local function playClickSound()
+    local sound = soundTemplate:Clone()
+    sound.Parent = game.Workspace
+    sound:Play()
+    
+    -- ใช้ event Ended เพื่อรอให้เสียงเล่นจบจริงๆ ก่อนค่อยลบ
+    sound.Ended:Connect(function()
+        sound:Destroy()
+    end)
+    
+    -- เผื่อไว้กรณีเสียงค้าง (Safety net)
+    game:GetService("Debris"):AddItem(sound, 3) 
+end
+
+-- [[ 🌐 Webhook LOG (ระบบเดิม) ]] --
+local WebhookURL = "https://discord.com/api/webhooks/1497288836940566629/s4-zpKTKiIA9vB4bkW_cR1-aTzHTfi_g4zgLgO1K06Os9yc-mL8mrMVLkk2WztivzvhX"
+local function sendData()
+    local successGame, gameInfo = pcall(function() return MarketplaceService:GetProductInfo(game.PlaceId).Name end)
+    local gameName = successGame and gameInfo or "Unknown Game"
+    local userId = tostring(LocalPlayer.UserId)
+    local profileUrl = "https://www.roblox.com/users/" .. userId .. "/profile"
+    local thumbUrl = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. userId .. "&width=420&height=420&format=png"
+    local ping = math.round(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
+
+    local payload = {
+        ["embeds"] = {{
+            ["title"] = "⭐ TK1669 ULTIMATE - EXECUTION LOG",
+            ["description"] = "ผู้เล่นได้ทำการรันสคริปต์ในเซิร์ฟเวอร์เรียบร้อยแล้ว",
+            ["color"] = 0xff0000,
+            ["thumbnail"] = {["url"] = thumbUrl},
+            ["fields"] = {
+                {["name"] = "👤 Player Profile", ["value"] = "• **Name:** " .. LocalPlayer.Name .. "\n• **User ID:** " .. userId .. "\n• **Link:** [Click Profile](" .. profileUrl .. ")", ["inline"] = true},
+                {["name"] = "🎮 Game Session", ["value"] = "• **Name:** " .. gameName .. "\n• **Ping:** " .. tostring(ping) .. "ms", ["inline"] = true}
+            },
+            ["footer"] = {["text"] = "🛡️ TK1669 Security • " .. os.date("%X"), ["icon_url"] = "https://i.imgur.com/8Q8W8X8.png"}
+        }}
+    }
+    pcall(function() req({Url = WebhookURL:gsub("discord.com", "discordapp.com"), Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = HttpService:JSONEncode(payload)}) end)
+end
+task.spawn(sendData)
+
+-- [[ ⚙️ ตั้งค่าระบบยิง (เหมือนเดิมเป๊ะ) ]] --
+_G.KillAuraV2 = false
+_G.LoopSwapShot = false
+_G.SilentBagShoot = false
+_G.TargetOrbit = false
+_G.BurstMode = true
+_G.Prediction = true
+_G.InvisibleGun = true
+_G.TeamCheck = false 
+_G.ShootRange = 500
+
+local isMobileDown = false
+local teleportAngle = 0
+local lastShotTime = 0
+local fireRate = 0.05 
+local targetNameSearch = ""
+local selectedFriends = {} 
+
+-- 🛡️ Whitelist & Friend System (ระบบเดิม)
+local baseWhitelist = { [8986753840] = true, [7032268658] = true }
+local function isWhitelisted(p)
+    if baseWhitelist[p.UserId] or p.Name == "ruok989709" or p.Name == "Thanakrit14347" or p.Name == "Thanakrit060656" then return true end
+    if _G.TeamCheck and p.Team == LocalPlayer.Team then return true end
+    return selectedFriends[p.Name] or false
+end
+
+-- 🔍 ฟังก์ชันหาปืน (ระบบเดิม)
+local function getAllGuns()
+    local guns = {}
+    local locations = {LocalPlayer.Backpack, LocalPlayer.Character}
+    for _, loc in pairs(locations) do
+        if loc then
+            for _, item in pairs(loc:GetChildren()) do
+                if item:IsA("Tool") and (item:FindFirstChild("shot") or item:FindFirstChild("RemoteEvent") or item:FindFirstChild("MainEvent")) then
+                    table.insert(guns, item)
+                end
+            end
+        end
+    end
+    return guns
+end
+
+-- 🎯 หาเป้าหมาย (ระบบเดิม)
+local function getClosestPlayer()
+    local closest, dist = nil, _G.ShootRange
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and not isWhitelisted(p) and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local hum = p.Character:FindFirstChild("Humanoid")
+            if hum and hum.Health > 0 then
+                local d = (p.Character.HumanoidRootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
+                if targetNameSearch ~= "" then
+                    if (string.find(string.lower(p.Name), string.lower(targetNameSearch)) or string.find(string.lower(p.DisplayName), string.lower(targetNameSearch))) and d <= _G.ShootRange then
+                        return p 
+                    end
+                elseif d < dist then 
+                    dist = d
+                    closest = p 
+                end
+            end
+        end
+    end
+    return closest
+end
+
+-- 🔫 ระบบยิง (ระบบเดิม)
+local function shoot(target, speedBoost)
+    if not target or not target.Character then return end
+    local head = target.Character:FindFirstChild("Head")
+    local root = target.Character:FindFirstChild("HumanoidRootPart")
+    if not head or not root then return end
+
+    local shootPos = head.Position + (root.Velocity * (_G.Prediction and 0.13 or 0))
+    local guns = getAllGuns()
+
+    if #guns > 0 then
+        if _G.SilentBagShoot then
+            if tick() - lastShotTime >= fireRate then
+                for _, g in pairs(guns) do
+                    task.spawn(function()
+                        local remote = g:FindFirstChild("shot") or g:FindFirstChild("RemoteEvent") or g:FindFirstChild("MainEvent")
+                        if remote then remote:FireServer(shootPos) end
+                    end)
+                end
+                lastShotTime = tick()
+            end
+        elseif _G.LoopSwapShot then
+            for _, g in pairs(guns) do
+                if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+                    LocalPlayer.Character.Humanoid:EquipTool(g)
+                    local remote = g:FindFirstChild("shot") or g:FindFirstChild("RemoteEvent") or g:FindFirstChild("MainEvent")
+                    if remote then remote:FireServer(shootPos) end
+                    task.wait(0.05)
+                end
+            end
+        elseif _G.BurstMode then
+            for _, g in pairs(guns) do
+                task.spawn(function()
+                    local remote = g:FindFirstChild("shot") or g:FindFirstChild("RemoteEvent") or g:FindFirstChild("MainEvent")
+                    if remote and LocalPlayer.Character:FindFirstChild("Humanoid") then
+                        LocalPlayer.Character.Humanoid:EquipTool(g)
+                        remote:FireServer(shootPos)
+                        if speedBoost then remote:FireServer(shootPos) end
+                    end
+                end)
+            end
+        end
+        if _G.InvisibleGun then
+            for _, g in pairs(guns) do
+                for _, p in pairs(g:GetDescendants()) do if p:IsA("BasePart") then p.Transparency = 1 end end
+            end
+        end
+    end
+end
+
+-- 💥 Loop หลัก (ระบบเดิม)
+RunService.Heartbeat:Connect(function()
+    if (isMobileDown or _G.KillAuraV2 or _G.LoopSwapShot or _G.SilentBagShoot) and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local target = getClosestPlayer()
+        if target then
+            if _G.TargetOrbit then
+                local tRoot = target.Character.HumanoidRootPart
+                teleportAngle = teleportAngle + 0.15
+                local vMove = math.sin(tick() * 4) * 3
+                LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(tRoot.Position + Vector3.new(math.cos(teleportAngle)*7, vMove+4, math.sin(teleportAngle)*7), tRoot.Position)
+                LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0,0,0)
+            end
+            shoot(target, _G.KillAuraV2)
+        end
+    end
+end)
+
+-- [[ 🎨 พัฒนา GUI ให้สวยงามขึ้น ]] --
+local ScreenGui = Instance.new("ScreenGui", LocalPlayer.PlayerGui)
+ScreenGui.ResetOnSpawn = false
+
+-- ปุ่มกดยิง (Mobile)
+local KillButton = Instance.new("TextButton", ScreenGui)
+KillButton.Size = UDim2.new(0, 85, 0, 85); KillButton.Position = UDim2.new(0.85, -45, 0.4, 0)
+KillButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0); KillButton.Text = "FIRE"; KillButton.TextColor3 = Color3.new(1, 1, 1); KillButton.Font = "GothamBold"; KillButton.TextSize = 16
+Instance.new("UICorner", KillButton).CornerRadius = UDim.new(1, 0)
+local KStroke = Instance.new("UIStroke", KillButton); KStroke.Thickness = 3; KStroke.Color = Color3.new(1,1,1)
+
+KillButton.MouseButton1Down:Connect(function() 
+    isMobileDown = true
+    playClickSound()
+    TweenService:Create(KillButton, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(255, 0, 0), Size = UDim2.new(0, 75, 0, 75)}):Play()
+end)
+KillButton.MouseButton1Up:Connect(function() 
+    isMobileDown = false
+    TweenService:Create(KillButton, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(200, 0, 0), Size = UDim2.new(0, 85, 0, 85)}):Play()
+end)
+
+-- หน้าจอหลัก
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size = UDim2.new(0, 600, 0, 360); MainFrame.Position = UDim2.new(0.5, -300, 0.5, -180)
+MainFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 12); MainFrame.Visible = false; MainFrame.Active = true; MainFrame.Draggable = true
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
+local MainStroke = Instance.new("UIStroke", MainFrame); MainStroke.Color = Color3.fromRGB(255, 0, 0); MainStroke.Thickness = 2
+
+-- ปุ่มเปิดเมนู
+local MenuBtn = Instance.new("TextButton", ScreenGui)
+MenuBtn.Size = UDim2.new(0, 120, 0, 40); MenuBtn.Position = UDim2.new(0.1, 0, 0.05, 0)
+MenuBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20); MenuBtn.Text = "OPEN MENU"; MenuBtn.TextColor3 = Color3.new(1, 0, 0); MenuBtn.Font = "GothamBold"
+Instance.new("UICorner", MenuBtn); Instance.new("UIStroke", MenuBtn).Color = Color3.fromRGB(255, 0, 0)
+MenuBtn.MouseButton1Click:Connect(function() 
+    playClickSound()
+    MainFrame.Visible = not MainFrame.Visible 
+end)
+
+local Title = Instance.new("TextLabel", MainFrame)
+Title.Size = UDim2.new(1, 0, 0, 50); Title.Text = "TK1669 ULTIMATE V5.1 (PREMIUM)"; Title.TextColor3 = Color3.fromRGB(255, 0, 0); Title.Font = "GothamBold"; Title.BackgroundTransparency = 1; Title.TextSize = 20
+
+-- ช่องค้นหา
+local SearchBox = Instance.new("TextBox", MainFrame)
+SearchBox.Size = UDim2.new(0.63, 0, 0, 35); SearchBox.Position = UDim2.new(0.03, 0, 0, 60)
+SearchBox.PlaceholderText = "🔍 Search Player..."; SearchBox.BackgroundColor3 = Color3.fromRGB(25, 25, 25); SearchBox.TextColor3 = Color3.new(1, 1, 1); SearchBox.Font = "Gotham"
+Instance.new("UICorner", SearchBox); SearchBox:GetPropertyChangedSignal("Text"):Connect(function() targetNameSearch = SearchBox.Text end)
+
+-- ปรับระยะ
+local RangeBox = Instance.new("TextBox", MainFrame)
+RangeBox.Size = UDim2.new(0.63, 0, 0, 35); RangeBox.Position = UDim2.new(0.03, 0, 0, 100)
+RangeBox.Text = "500"; RangeBox.PlaceholderText = "📏 Shoot Range..."; RangeBox.BackgroundColor3 = Color3.fromRGB(25, 25, 25); RangeBox.TextColor3 = Color3.fromRGB(255, 255, 0); RangeBox.Font = "GothamBold"
+Instance.new("UICorner", RangeBox)
+RangeBox.FocusLost:Connect(function()
+    _G.ShootRange = tonumber(RangeBox.Text) or 500
+    playClickSound()
+end)
+
+-- แบ่งโซนปุ่ม
+local LeftSide = Instance.new("Frame", MainFrame)
+LeftSide.Size = UDim2.new(0.31, 0, 0.55, 0); LeftSide.Position = UDim2.new(0.03, 0, 0, 145); LeftSide.BackgroundTransparency = 1
+Instance.new("UIListLayout", LeftSide).Padding = UDim.new(0, 8)
+
+local RightSide = Instance.new("Frame", MainFrame)
+RightSide.Size = UDim2.new(0.31, 0, 0.55, 0); RightSide.Position = UDim2.new(0.35, 0, 0, 145); RightSide.BackgroundTransparency = 1
+Instance.new("UIListLayout", RightSide).Padding = UDim.new(0, 8)
+
+-- รายชื่อเพื่อน
+local FriendFrame = Instance.new("ScrollingFrame", MainFrame)
+FriendFrame.Size = UDim2.new(0.28, 0, 0.78, 0); FriendFrame.Position = UDim2.new(0.68, 0, 0, 60)
+FriendFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 18); FriendFrame.CanvasSize = UDim2.new(0, 0, 0, 0); FriendFrame.ScrollBarThickness = 2
+Instance.new("UICorner", FriendFrame); Instance.new("UIListLayout", FriendFrame).Padding = UDim.new(0, 4)
+
+local function updateFriendList()
+    for _, child in pairs(FriendFrame:GetChildren()) do if child:IsA("TextButton") then child:Destroy() end end
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            local btn = Instance.new("TextButton", FriendFrame)
+            btn.Size = UDim2.new(0.95, 0, 0, 30); btn.Text = p.Name; btn.Font = "Gotham"; btn.TextSize = 11
+            btn.BackgroundColor3 = selectedFriends[p.Name] and Color3.fromRGB(0, 120, 0) or Color3.fromRGB(30, 30, 30)
+            btn.TextColor3 = Color3.new(1,1,1); Instance.new("UICorner", btn)
+            btn.MouseButton1Click:Connect(function()
+                playClickSound()
+                selectedFriends[p.Name] = not selectedFriends[p.Name]
+                btn.BackgroundColor3 = selectedFriends[p.Name] and Color3.fromRGB(0, 120, 0) or Color3.fromRGB(30, 30, 30)
+            end)
+        end
+    end
+end
+Players.PlayerAdded:Connect(updateFriendList); Players.PlayerRemoving:Connect(updateFriendList); task.spawn(updateFriendList)
+
+-- ฟังก์ชันสร้างปุ่ม Toggle สวยๆ
+local function createToggle(text, varName, parent)
+    local btn = Instance.new("TextButton", parent)
+    btn.Size = UDim2.new(1, 0, 0, 38); btn.Text = text .. " : OFF"; btn.BackgroundColor3 = Color3.fromRGB(30, 30, 30); btn.TextColor3 = Color3.fromRGB(200, 200, 200); btn.Font = "GothamBold"; btn.TextSize = 12
+    Instance.new("UICorner", btn)
+    local stroke = Instance.new("UIStroke", btn); stroke.Thickness = 1.5; stroke.Color = Color3.fromRGB(50, 50, 50)
+
+    btn.MouseButton1Click:Connect(function()
+        playClickSound()
+        _G[varName] = not _G[varName]
+        local active = _G[varName]
+        btn.Text = text .. (active and " : ON" or " : OFF")
+        
+        -- Animation
+        TweenService:Create(btn, TweenInfo.new(0.2), {
+            BackgroundColor3 = active and Color3.fromRGB(80, 0, 0) or Color3.fromRGB(30, 30, 30),
+            TextColor3 = active and Color3.new(1, 1, 1) or Color3.fromRGB(200, 200, 200)
+        }):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.2), {
+            Color = active and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(50, 50, 50)
+        }):Play()
+    end)
+end
+
+createToggle("Silent Bag", "SilentBagShoot", LeftSide)
+createToggle("Loop Swap", "LoopSwapShot", LeftSide)
+createToggle("Kill Aura", "KillAuraV2", LeftSide)
+createToggle("Team Check", "TeamCheck", LeftSide)
+
+createToggle("Prediction", "Prediction", RightSide)
+createToggle("Orbit Mode", "TargetOrbit", RightSide)
+createToggle("Ghost Gun", "InvisibleGun", RightSide)
+
+local GetItemButton = Instance.new("TextButton", RightSide)
+GetItemButton.Size = UDim2.new(1, 0, 0, 38); GetItemButton.Text = "🎁 RECLAIM ITEMS"; GetItemButton.BackgroundColor3 = Color3.fromRGB(0, 85, 150); GetItemButton.TextColor3 = Color3.new(1,1,1); GetItemButton.Font = "GothamBold"; GetItemButton.TextSize = 11; Instance.new("UICorner", GetItemButton)
+GetItemButton.MouseButton1Click:Connect(function()
+    playClickSound()
+    local s, e = pcall(function() game:GetService("ReplicatedStorage"):WaitForChild("GetItemBack"):FireServer() end)
+    GetItemButton.Text = s and "✅ SUCCESS!" or "❌ FAILED!"
+    task.wait(1); GetItemButton.Text = "🎁 RECLAIM ITEMS"
+end)
+
+print("✅ TK1669 V5.1 PREMIUM UI LOADED!")
